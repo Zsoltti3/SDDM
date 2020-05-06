@@ -7,6 +7,7 @@ import warnings
 import pickle
 import re
 import time
+import datetime
 import json
 import numpy as np
 import geopandas as gpd
@@ -57,9 +58,12 @@ def replace_east_west_ordinal(x):
     
     return x
 
-def load_parking_data(path):
+def load_parking_data(path,nrows):
     
-    raw = pd.read_csv(path,usecols=[0,23,24])
+    if nrows:
+        raw = pd.read_csv(path,usecols=[0,23,24],nrows=nrows)
+    else:
+        raw = pd.read_csv(path,usecols=[0,23,24])
     raw['Street Name'] = raw['Street Name'].str.lower()
     raw = raw.dropna()
     raw['Street Name'] = raw['Street Name'].apply(suffix)
@@ -67,9 +71,12 @@ def load_parking_data(path):
     
     return raw
     
-def load_road_network(path):
-    roadnetwork=pd.read_csv(path,index_col=0)
-    return roadnetwork
+def load_road_network():
+    
+    with open('addresses.json') as json_file:
+        addresses = json.load(json_file)
+        
+    return addresses
 
 def covert_to_json(parking):
     
@@ -83,73 +90,49 @@ def covert_to_json(parking):
 
         if housenumber not in fines_dict[streetname]:
              fines_dict[streetname][housenumber]=list()
-
         fines_dict[streetname][housenumber].append(str(finedex))
         
     import json
     with open('fines.json', 'w') as f:
         json.dump(fines_dict, f)
-        
-def get_valid_adresses(roadnetwork):
-    
-    address_dict=defaultdict(list)
-    nan_streets = roadnetwork[(roadnetwork['r_high_hn'].isna()) | (roadnetwork['r_low_hn'].isna()) | (roadnetwork['l_low_hn'].isna()) | (roadnetwork['l_high_hn'].isna())]['full_stree'].values
 
-    for x in range(roadnetwork.shape[0]):
-
-        streetname=roadnetwork.loc[x,'full_stree']
-
-        if streetname not in nan_streets:
-
-            address_dict[streetname].append(
-                (roadnetwork.loc[x,'r_low_hn'],roadnetwork.loc[x,'r_high_hn'],x)
-            )
-
-            address_dict[streetname].append(
-                (roadnetwork.loc[x,'l_low_hn'],roadnetwork.loc[x,'l_high_hn'],x)
-        )
-        if x%100000==0:
-            print('\r{0}/{1}'.format(x,(roadnetwork.shape[0])))
-            
-    return address_dict, nan_streets
-
-def match_location_writefile(roadnetwork):
+def match_location_writefile():
     
     """  """
 
-    address_dict, nan_streets=get_valid_adresses(roadnetwork)
+    address_dict=load_road_network()
     fine_address={}
     with open('fines.json') as json_file:
         fines = json.load(json_file)
 
     for street in fines:
-
+        
         if street in address_dict:
 
             ranges = address_dict[street]
             
-            for h_num in fines[street]:
+            if 'nan_street' not in address_dict[street]:
+            
+                for h_num in fines[street]:
 
-                for rng in ranges:
+                    for rng in ranges:
 
-                    low=rng[0]
-                    high=rng[1]
-                    road_dex=rng[2]
+                        low=rng[0]
+                        high=rng[1]
+                        road_dex=rng[2]
 
-                    if (h_num >=low) and (h_num<=high):
+                        if (h_num >=low) and (h_num<=high):
 
-                        for finedex in fines[street][h_num]:
-                            fine_address[finedex]=road_dex
-
-        elif street in nan_streets:
-
-            fine_address[finedex]=np.random.choice(roadnetwork[roadnetwork['full_stree']==street].index)
+                            for finedex in fines[street][h_num]:
+                                fine_address[finedex]=road_dex
+            else:
+                fine_address[finedex]=np.random.choice(address_dict[street]['nan_street'])            
             
     with open('fine_adresses.csv','w') as w:
         for fine in fine_address:
             w.write(str(fine)+','+str(fine_address[fine])+'\n')
             
-def do_coordinate_matching(path):
+def do_coordinate_matching(path,nrows=None):
     
     """Run this func with parking fine dataset as param.
     Approx 45-60 mins to finish matching one file.
@@ -158,17 +141,15 @@ def do_coordinate_matching(path):
     
     print('\rProcess started at {}'.format(datetime.datetime.now().strftime("%H:%M:%S")))
     print('\rLoading data..')
-    parking = load_parking_data(path)
+    parking = load_parking_data(path,nrows)
     print('\rParking data loaded..')
-    roadnetwork = load_road_network('Road_.csv')
-    print('\rRoad data loaded..')
     print('\rGathering adresses...')
     covert_to_json(parking)
     print('\rJSON file created at {0}.'.format(datetime.datetime.now().strftime("%H:%M:%S")))
     print('\rMatching...')
-    match_location_writefile(roadnetwork)
+    match_location_writefile()
     year = path.split('.')[0].split('_')[-1]
-    print('\Done matching {} at {}'.format(year,datetime.datetime.now().strftime("%H:%M:%S")))
+    print('\Done matching year {} at {}'.format(year,datetime.datetime.now().strftime("%H:%M:%S")))
     df = pd.read_csv('fine_adresses.csv')
     print('\rMatch performance: {} %'.format(df.shape[0]/parking.shape[0]*100))
     
@@ -180,7 +161,9 @@ def test():
     rnd = np.random.randint(0,df.shape[0],size=1)
     finedex=int(df.loc[rnd,'fineID'])
     roaddex=int(df.loc[rnd,'roadID'])
-    parking.iloc[finedex,:]
+    
+    with open('coordinates.txt') as f:
+        coords = [line.strip().split(';') for line in f]
     
     import folium
     import shapely.wkt
@@ -195,10 +178,12 @@ def test():
         else:
             return list(zip(x_s,y_s))
 
-    P = shapely.wkt.loads(roadnetwork.loc[roaddex,'geometry'])
+    P = shapely.wkt.loads(coords[int(rnd)][1])
     line=linestring_to_tuple(P)
     m = folium.Map()
     my_PolyLine=folium.PolyLine(locations=line,weight=5)
     m.add_children(my_PolyLine)
+    
+    print("Index: {}".format(finedex))
     
     return m

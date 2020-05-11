@@ -120,6 +120,11 @@ def match_location_writefile():
                         low=rng[0]
                         high=rng[1]
                         road_dex=rng[2]
+                        
+                        if '-' not in h_num:
+                            h_num = int(h_num)
+                            low = int(low)
+                            high = int(high)               
 
                         if (h_num >=low) and (h_num<=high):
 
@@ -127,10 +132,12 @@ def match_location_writefile():
                                 fine_address[finedex]=road_dex
             else:
                 fine_address[finedex]=np.random.choice(address_dict[street]['nan_street'])            
-            
-    with open('fine_adresses.csv','w') as w:
+    
+    with open('fine_adresses.csv','a') as a:
         for fine in fine_address:
-            w.write(str(fine)+','+str(fine_address[fine])+'\n')
+            a.write(str(fine)+','+str(fine_address[fine])+'\n')
+            
+    return fine_address
             
 def do_coordinate_matching(path,nrows=None):
     
@@ -147,11 +154,10 @@ def do_coordinate_matching(path,nrows=None):
     covert_to_json(parking)
     print('\rJSON file created at {0}.'.format(datetime.datetime.now().strftime("%H:%M:%S")))
     print('\rMatching...')
-    match_location_writefile()
+    matched = match_location_writefile()
     year = path.split('.')[0].split('_')[-1]
     print('\Done matching year {} at {}'.format(year,datetime.datetime.now().strftime("%H:%M:%S")))
-    df = pd.read_csv('fine_adresses.csv')
-    print('\rMatch performance: {} %'.format(df.shape[0]/parking.shape[0]*100))
+    print('\rMatch performance: {} %'.format(len(matched)/parking.shape[0]*100))
     
 def test():
     

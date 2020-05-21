@@ -1,5 +1,6 @@
 # SDDM
-Run do_coordinate_matching() function in loc_match.py
+Run "do_coordinate_matching()" function in loc_match.py with a path to one of these '.csv' files:
+https://data.cityofnewyork.us/City-Government/Parking-Violations-Issued-Fiscal-Year-2020/pvqr-7yc4
 
 
 Fines are indexed by Summon number (unique).
